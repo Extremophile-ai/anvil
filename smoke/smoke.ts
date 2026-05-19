@@ -33,33 +33,34 @@ import {
   createLogFailureTool,
   createSkillTool,
 } from "../packages/core/dist/index.js";
-import { newJobId } from "../packages/shared/dist/index.js";
+import { type AnvilEvent, newJobId } from "../packages/shared/dist/index.js";
 
-const results = [];
+const results: boolean[] = [];
 
-function assert(condition, message) {
+function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-async function phase(name, fn) {
+async function phase(name: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
     results.push(true);
     console.log(`  ✓ ${name}`);
   } catch (err) {
     results.push(false);
-    console.log(`  ✗ ${name}\n      ${err?.message ?? err}`);
+    const message = err instanceof Error ? err.message : String(err);
+    console.log(`  ✗ ${name}\n      ${message}`);
   }
 }
 
-const tmp = (prefix) => mkdtempSync(join(tmpdir(), `anvil-smoke-${prefix}-`));
+const tmp = (prefix: string): string => mkdtempSync(join(tmpdir(), `anvil-smoke-${prefix}-`));
 
 console.log("Anvil — offline integration smoke\n");
 
 await phase("runtime: events, JSONL audit log, traversal guard", async () => {
   const dir = tmp("rt");
   const bus = new EventBus();
-  const seen = [];
+  const seen: AnvilEvent[] = [];
   bus.on((event) => seen.push(event));
   const logger = new JsonlLogger(join(dir, "logs", "anvil.log"));
   logger.attach(bus);
@@ -101,7 +102,9 @@ await phase("memory: remember, semantic recall, dedupe, reindex", async () => {
 
 await phase("self-healing: checkpoint, rollback, escalation", async () => {
   const dir = tmp("heal");
-  const git = (...args) => execFileSync("git", args, { cwd: dir });
+  const git = (...args: string[]): void => {
+    execFileSync("git", args, { cwd: dir });
+  };
   git("init", "-q");
   git("config", "user.email", "smoke@anvil.dev");
   git("config", "user.name", "Anvil Smoke");
@@ -109,15 +112,18 @@ await phase("self-healing: checkpoint, rollback, escalation", async () => {
   git("add", "-A");
   git("commit", "-q", "-m", "init");
   const bus = new EventBus();
-  const kinds = [];
+  const kinds: string[] = [];
   bus.on((event) => kinds.push(event.kind));
   const healer = new SelfHealer({ bus, git: new GitCheckpoints(dir), strikes: new StrikeBoard(1) });
   let escalated = false;
   try {
-    await healer.run({ jobId: newJobId(), label: "risky", retry: { baseDelayMs: 1, jitter: false } }, async () => {
-      writeFileSync(join(dir, "f.ts"), "broken\n");
-      throw new Error("step failed");
-    });
+    await healer.run(
+      { jobId: newJobId(), label: "risky", retry: { baseDelayMs: 1, jitter: false } },
+      async () => {
+        writeFileSync(join(dir, "f.ts"), "broken\n");
+        throw new Error("step failed");
+      },
+    );
   } catch {
     escalated = true;
   }
@@ -173,7 +179,8 @@ await phase("mcp: discover, gate installs (approved + curated)", async () => {
   }
   assert(refusedUnapproved && refusedRogue, "install gating failed");
   await mcp.install("filesystem", { approved: true });
-  assert(mcp.configs().filesystem?.type === "stdio", "runtime config generation failed");
+  const stdio = mcp.configs().filesystem;
+  assert(stdio !== undefined && "type" in stdio && stdio.type === "stdio", "runtime config wrong");
   store.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -231,7 +238,10 @@ await phase("ingestion: stack detection, profile, code index + search", async ()
   const store = new StateStore(join(dir, "state.db"));
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "shop", dependencies: { express: "4" } }));
   mkdirSync(join(dir, "src"));
-  writeFileSync(join(dir, "src", "checkout.ts"), "export function processPayment(amount) {\n  return amount * 1.2;\n}\n");
+  writeFileSync(
+    join(dir, "src", "checkout.ts"),
+    "export function processPayment(amount) {\n  return amount * 1.2;\n}\n",
+  );
   writeFileSync(join(dir, "src", "auth.ts"), "export function login(user) {\n  return user;\n}\n");
   const ingestor = new WorkspaceIngestor({ store, embedder: new HashEmbedder() });
   const result = await ingestor.ingest(new Workspace(dir));

@@ -17,7 +17,9 @@ import { newJobId } from "../packages/shared/dist/index.js";
 
 const bus = new EventBus();
 bus.on((event) => {
-  if (event.kind === "assistant.text") console.log(`  [assistant] ${event.message.trim().slice(0, 240)}`);
+  if (event.kind === "assistant.text") {
+    console.log(`  [assistant] ${event.message.trim().slice(0, 240)}`);
+  }
   if (event.kind === "run.failed") console.log(`  [error] ${event.message}`);
 });
 

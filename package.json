@@ -16,8 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "smoke": "pnpm build && node smoke/smoke.mjs",
-    "smoke:live": "pnpm build && node smoke/live.mjs",
+    "smoke": "pnpm build && tsc --noEmit -p smoke/tsconfig.json && tsx smoke/smoke.ts",
+    "smoke:live": "pnpm build && tsc --noEmit -p smoke/tsconfig.json && tsx smoke/live.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

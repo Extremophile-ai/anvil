@@ -47,15 +47,16 @@ pnpm exec vitest run packages/core/src/memory   # just the memory tests
 
 ### 3. Offline smoke — `pnpm smoke`
 
-[`smoke/smoke.mjs`](smoke/smoke.mjs) imports the **built `dist`** — exactly as a
+[`smoke/smoke.ts`](smoke/smoke.ts) imports the **built `dist`** — exactly as a
 consumer would — and drives all eight engine subsystems end-to-end in temp
 directories. Where `pnpm test` proves the source is correct, the smoke proves
-the *packaged build* is correct (exports, entry points, ESM resolution). No
-network, no API key.
+the *packaged build* is correct (exports, entry points, ESM resolution). The
+smoke is itself TypeScript: `pnpm smoke` type-checks it (via `tsc --noEmit`)
+before running it with `tsx`. No network, no API key.
 
 ### 4. Live runtime — `pnpm smoke:live`
 
-[`smoke/live.mjs`](smoke/live.mjs) makes a **real run against the LLM
+[`smoke/live.ts`](smoke/live.ts) makes a **real run against the LLM
 provider** — it drives `Runtime.run()` through the Claude Agent SDK and Claude
 Opus, and checks a full agent loop completes. It is deliberately separate from
 `pnpm test` and `pnpm smoke` because it makes a real model call.
