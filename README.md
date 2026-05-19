@@ -14,15 +14,18 @@ and builds the tooling that workspace needs.
 
 ## Status
 
-✅ **Milestones A and B are complete.** The harness core (runtime, state,
-hybrid memory, self-healing, tools, MCP manager, learning loop, skill factory,
-workspace ingestion) plus the end-to-end build engine (plan DAG, JobStore,
-heuristic + LLM planner, local/Docker sandbox, delivery via feature-branch and
-`gh`, and the orchestrator that wires them) — 97 unit tests and 9 offline
-smoke phases, all green.
+✅ **Milestones A, B, and C are all complete.** The harness core plus the
+end-to-end build engine plus all three front doors — one CLI (`anvil`), one
+stdio MCP server (`anvil-mcp`), one HTTP+SSE daemon (`anvil-service`) — share
+one `AnvilService` engine in `@anvil/core`. 114 unit tests and 11 offline
+smoke phases all green, plus live smokes against Opus for the runtime and a
+real end-to-end build via Anvil's tool layer.
 
-Next: **Milestone C** hardens the CLI, MCP server, and HTTP service over the
-core engine. See [docs/architecture.md](docs/architecture.md).
+Bonus: **goal mode** — Anvil's port of Claude Code's `/goal` slash command —
+is wired through every front door (`anvil goal`, MCP `goal` tool, HTTP
+`POST /builds { goal: ... }`).
+
+See [docs/architecture.md](docs/architecture.md) and [TESTING.md](TESTING.md).
 
 ## Core idea
 
