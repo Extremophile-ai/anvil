@@ -44,4 +44,24 @@ export const MIGRATIONS: readonly string[] = [
   CREATE INDEX idx_memory_facts_scope ON memory_facts(scope);
   CREATE INDEX idx_jobs_status ON jobs(status);
   `,
+
+  // v2 — installed MCP servers.
+  `
+  CREATE TABLE mcp_servers (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    transport    TEXT NOT NULL,
+    command      TEXT,
+    args         TEXT NOT NULL DEFAULT '[]',
+    url          TEXT,
+    package      TEXT,
+    capabilities TEXT NOT NULL DEFAULT '[]',
+    env          TEXT NOT NULL DEFAULT '{}',
+    env_keys     TEXT NOT NULL DEFAULT '[]',
+    homepage     TEXT,
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    installed_at TEXT NOT NULL
+  );
+  `,
 ];
