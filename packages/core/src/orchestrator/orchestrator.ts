@@ -19,6 +19,8 @@ import type { LearningLoop } from "../learning/loop.js";
 import type { MemoryManager } from "../memory/manager.js";
 import { Runtime, type RuntimeConfig } from "../runtime/runtime.js";
 import type { StateStore } from "../state/store.js";
+import { createAnvilMcpServer } from "../tools/mcp-bridge.js";
+import type { ToolRegistry } from "../tools/registry.js";
 import { JobStore } from "./job-store.js";
 import { topologicalOrder, updateNode } from "./plan.js";
 import { HeuristicPlanner, type Planner } from "./planner.js";
@@ -52,6 +54,17 @@ export interface OrchestratorDeps {
   runtimeFactory?: RuntimeFactory;
   /** Default model. Defaults to "opus". */
   model?: string;
+  /**
+   * When provided, Anvil's tools are exposed to the agent as an in-process MCP
+   * server (`mcp__anvil__*`) and the agent's raw write tools are blocked, so
+   * every change runs through Anvil's audit + guardrails.
+   */
+  toolRegistry?: ToolRegistry;
+  /**
+   * Tools the agent cannot use. Defaults to the raw SDK write tools when
+   * `toolRegistry` is provided, so the agent must use Anvil's `write_file` etc.
+   */
+  disallowedTools?: string[];
 }
 
 export type DeliveryMode = "none" | "branch" | "push" | "pr";
@@ -71,6 +84,10 @@ export interface BuildOptions {
   maxTurns?: number;
   /** Retry policy for each node. */
   retry?: Partial<RetryPolicy>;
+  /** Per-build override of the disallowed agent tools. */
+  disallowedTools?: string[];
+  /** Per-build override of which Claude Code setting sources are inherited. */
+  settingSources?: RuntimeConfig["settingSources"];
 }
 
 export interface BuildResult {
@@ -80,6 +97,8 @@ export interface BuildResult {
   pullRequestUrl?: string;
   corrections: string[];
 }
+
+const DEFAULT_DISALLOWED_WHEN_BRIDGED: readonly string[] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
 
 export class Orchestrator {
   private readonly bus: EventBus;
@@ -92,6 +111,8 @@ export class Orchestrator {
   private readonly deliverer: Deliverer | undefined;
   private readonly runtimeFactory: RuntimeFactory;
   private readonly model: string;
+  private readonly toolRegistry: ToolRegistry | undefined;
+  private readonly disallowedTools: string[] | undefined;
 
   private activeRuntime: RuntimeLike | undefined;
   private activeJobId: JobId | undefined;
@@ -109,6 +130,9 @@ export class Orchestrator {
     this.runtimeFactory =
       deps.runtimeFactory ?? ((config) => new Runtime({ bus: deps.bus, config }) as RuntimeLike);
     this.model = deps.model ?? "opus";
+    this.toolRegistry = deps.toolRegistry;
+    this.disallowedTools =
+      deps.disallowedTools ?? (deps.toolRegistry ? [...DEFAULT_DISALLOWED_WHEN_BRIDGED] : undefined);
   }
 
   /** True while a build is in progress. */
@@ -147,13 +171,34 @@ export class Orchestrator {
       const plan = await this.planner.plan({ task, workspace: this.workspace, context });
       jobs.update(job.id, { status: "running", plan });
 
-      const runtime = this.runtimeFactory({
+      const mcpServers = this.toolRegistry
+        ? {
+            anvil: createAnvilMcpServer({
+              registry: this.toolRegistry,
+              jobId: job.id,
+              workspace: this.workspace,
+              bus: this.bus,
+            }),
+          }
+        : undefined;
+      const disallowedTools = options.disallowedTools ?? this.disallowedTools;
+
+      const runtimeConfig: RuntimeConfig = {
         cwd: this.workspace.root,
         model: options.model ?? this.model,
         permissionMode: options.permissionMode ?? "bypassPermissions",
         systemPrompt: buildSystemPrompt(),
-        ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
-      });
+        // The orchestrator owns the autonomous instruction set: it inherits
+        // workspace conventions ("project") but never user-global Claude Code
+        // settings, which carry interactive-mode rules like "seek approval
+        // before file edits" that would block automation.
+        settingSources: options.settingSources ?? ["project"],
+      };
+      if (options.maxTurns !== undefined) runtimeConfig.maxTurns = options.maxTurns;
+      if (mcpServers) runtimeConfig.mcpServers = mcpServers;
+      if (disallowedTools && disallowedTools.length > 0) runtimeConfig.disallowedTools = disallowedTools;
+
+      const runtime = this.runtimeFactory(runtimeConfig);
       this.activeRuntime = runtime;
 
       const { plan: finalPlan, allOk } = await this.executePlan(job.id, task, plan, context, runtime, jobs, options);

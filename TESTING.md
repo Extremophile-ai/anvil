@@ -73,6 +73,20 @@ Opus, and checks a full agent loop completes. It is deliberately separate from
 pnpm smoke:live
 ```
 
+### 5. Live end-to-end build — `pnpm smoke:build`
+
+[`smoke/build.ts`](smoke/build.ts) drives a **full orchestrator build** through
+Opus: it plans the task, the agent works step by step through Anvil's MCP tool
+bridge (`mcp__anvil__write_file` and friends — raw `Write`/`Edit` are blocked),
+and the file actually lands on disk. Same authentication as `smoke:live`. Opt-in.
+
+```bash
+pnpm smoke:build
+```
+
+This is the proof that Anvil's "tools replace raw access" architecture works end
+to end: every write goes through the audit + guardrail layer.
+
 ## Coverage — `pnpm test:coverage`
 
 ```bash

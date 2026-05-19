@@ -24,6 +24,9 @@ export interface RuntimeConfig {
   canUseTool?: Options["canUseTool"];
   hooks?: Options["hooks"];
   settingSources?: Options["settingSources"];
+  /** Built-in agent tools the orchestrator wants blocked (e.g. raw `Write`). */
+  allowedTools?: Options["allowedTools"];
+  disallowedTools?: Options["disallowedTools"];
 }
 
 type ResultMessage = Extract<SDKMessage, { type: "result" }>;
@@ -138,6 +141,8 @@ export class Runtime {
     if (this.config.canUseTool !== undefined) options.canUseTool = this.config.canUseTool;
     if (this.config.hooks !== undefined) options.hooks = this.config.hooks;
     if (this.config.settingSources !== undefined) options.settingSources = this.config.settingSources;
+    if (this.config.allowedTools !== undefined) options.allowedTools = this.config.allowedTools;
+    if (this.config.disallowedTools !== undefined) options.disallowedTools = this.config.disallowedTools;
     return options;
   }
 

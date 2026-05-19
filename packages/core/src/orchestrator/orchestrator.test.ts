@@ -160,4 +160,32 @@ describe("Orchestrator", () => {
     expect(reloaded.status).toBe("succeeded");
     expect(JSON.parse(reloaded.plan).nodes.length).toBe(result.plan.nodes.length);
   });
+
+  it("wires Anvil's tool registry as an MCP server and disallows raw writes", async () => {
+    const { ToolRegistry } = await import("../tools/registry.js");
+    const { builtinTools } = await import("../tools/builtins/index.js");
+    let capturedConfig: { mcpServers?: Record<string, unknown>; disallowedTools?: string[] } | undefined;
+    const registry = new ToolRegistry({
+      workspace: new Workspace("/tmp/anvil-orch-tests"),
+      bus: new EventBus(),
+    });
+    registry.registerAll(builtinTools());
+
+    orchestrator = new Orchestrator({
+      workspace: new Workspace("/tmp/anvil-orch-tests"),
+      store,
+      bus: new EventBus(),
+      toolRegistry: registry,
+      runtimeFactory: (config) => {
+        capturedConfig = config as typeof capturedConfig;
+        return fake;
+      },
+    });
+    await orchestrator.build("Refactor the auth module", { retry: fastRetry });
+
+    expect(capturedConfig?.mcpServers?.anvil).toBeDefined();
+    expect(capturedConfig?.disallowedTools).toEqual(
+      expect.arrayContaining(["Write", "Edit", "MultiEdit", "NotebookEdit"]),
+    );
+  });
 });
