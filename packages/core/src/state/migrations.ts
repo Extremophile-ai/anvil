@@ -64,4 +64,31 @@ export const MIGRATIONS: readonly string[] = [
     installed_at TEXT NOT NULL
   );
   `,
+
+  // v3 — the learning loop: logged failures and the regression eval suite.
+  `
+  CREATE TABLE failures (
+    id                  TEXT PRIMARY KEY,
+    job_id              TEXT,
+    what_happened       TEXT NOT NULL,
+    root_cause          TEXT NOT NULL,
+    fix_applied         TEXT NOT NULL,
+    harness_improvement TEXT NOT NULL,
+    severity            TEXT NOT NULL,
+    created_at          TEXT NOT NULL
+  );
+
+  CREATE TABLE evals (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    scenario          TEXT NOT NULL,
+    expectation       TEXT NOT NULL,
+    source_failure_id TEXT,
+    status            TEXT NOT NULL DEFAULT 'pending',
+    created_at        TEXT NOT NULL,
+    last_run_at       TEXT
+  );
+
+  CREATE INDEX idx_evals_status ON evals(status);
+  `,
 ];
