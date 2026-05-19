@@ -14,8 +14,14 @@ and builds the tooling that workspace needs.
 
 ## Status
 
-🚧 **Phase 1 — scaffold.** The monorepo skeleton builds, lints, and tests green.
-Engine subsystems land phase by phase — see [docs/architecture.md](docs/architecture.md).
+✅ **Milestone A — the harness core — is complete.** All ten `@anvil/core`
+subsystems build, lint, and test green (64 unit tests, plus an integration
+smoke per phase): runtime, state, hybrid memory, self-healing, the tool layer,
+the MCP manager, the learning loop, the skill factory, and workspace ingestion.
+
+Next: **Milestone B** wires these into the end-to-end build orchestrator;
+**Milestone C** hardens the CLI, MCP server, and HTTP service. See
+[docs/architecture.md](docs/architecture.md).
 
 ## Core idea
 
