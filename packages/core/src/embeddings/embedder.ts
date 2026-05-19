@@ -37,3 +37,14 @@ export function l2normalize(vec: number[]): number[] {
   if (norm === 0) return vec.slice();
   return vec.map((v) => v / norm);
 }
+
+/** Encode a vector as a compact Float32 byte buffer for BLOB storage. */
+export function encodeVector(vector: number[]): Uint8Array {
+  return new Uint8Array(new Float32Array(vector).buffer);
+}
+
+/** Decode a Float32 byte buffer back into a vector. */
+export function decodeVector(blob: Uint8Array): number[] {
+  const copy = Uint8Array.from(blob);
+  return Array.from(new Float32Array(copy.buffer, 0, Math.floor(copy.byteLength / 4)));
+}

@@ -3,33 +3,10 @@
  * agent an accurate picture of the workspace and prevent it from guessing.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { z } from "zod";
+import { DEFAULT_SKIP_DIRS, walkFiles } from "../../lib/fs.js";
 import { defineReadTool, type ReadTool } from "../types.js";
-
-const SKIP = new Set(["node_modules", ".git", "dist", ".anvil", "coverage"]);
-
-function walk(root: string, start: string, maxEntries: number): string[] {
-  const files: string[] = [];
-  const stack: string[] = [start];
-  while (stack.length > 0 && files.length < maxEntries) {
-    const dir = stack.pop();
-    if (dir === undefined) break;
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (SKIP.has(entry.name)) continue;
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) stack.push(full);
-      else files.push(relative(root, full));
-    }
-  }
-  return files;
-}
 
 function renderTree(dir: string, prefix: string, depth: number, maxDepth: number, lines: string[]): void {
   if (depth > maxDepth) return;
@@ -40,7 +17,7 @@ function renderTree(dir: string, prefix: string, depth: number, maxDepth: number
     return;
   }
   const visible = entries
-    .filter((entry) => !SKIP.has(entry.name) && !entry.name.startsWith("."))
+    .filter((entry) => !DEFAULT_SKIP_DIRS.has(entry.name) && !entry.name.startsWith("."))
     .sort((a, b) => a.name.localeCompare(b.name));
   visible.forEach((entry, index) => {
     const last = index === visible.length - 1;
@@ -104,7 +81,7 @@ const findFilesTool = defineReadTool({
   run: (input, ctx) => {
     const abs = ctx.workspace.resolve(input.dir);
     const query = input.query.toLowerCase();
-    const matches = walk(ctx.workspace.root, abs, 5000)
+    const matches = walkFiles(ctx.workspace.root, { start: abs, maxEntries: 5000 })
       .filter((path) => path.toLowerCase().includes(query))
       .slice(0, input.limit);
     return Promise.resolve({

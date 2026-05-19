@@ -91,4 +91,19 @@ export const MIGRATIONS: readonly string[] = [
 
   CREATE INDEX idx_evals_status ON evals(status);
   `,
+
+  // v4 — the code index built by workspace ingestion.
+  `
+  CREATE TABLE code_chunks (
+    id         TEXT PRIMARY KEY,
+    path       TEXT NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line   INTEGER NOT NULL,
+    content    TEXT NOT NULL,
+    embedder   TEXT NOT NULL,
+    vector     BLOB NOT NULL
+  );
+
+  CREATE INDEX idx_code_chunks_path ON code_chunks(path);
+  `,
 ];
