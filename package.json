@@ -22,11 +22,14 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "link:cli": "pnpm link --global --filter @anvil/cli",
-    "link:mcp": "pnpm link --global --filter @anvil/mcp-server",
-    "link:service": "pnpm link --global --filter @anvil/service",
+    "link:cli": "cd packages/cli && pnpm link --global",
+    "link:mcp": "cd packages/mcp-server && pnpm link --global",
+    "link:service": "cd packages/service && pnpm link --global",
     "link:global": "pnpm link:cli && pnpm link:mcp && pnpm link:service",
-    "unlink:global": "pnpm --filter @anvil/cli unlink --global && pnpm --filter @anvil/mcp-server unlink --global && pnpm --filter @anvil/service unlink --global",
+    "unlink:cli": "cd packages/cli && pnpm unlink --global",
+    "unlink:mcp": "cd packages/mcp-server && pnpm unlink --global",
+    "unlink:service": "cd packages/service && pnpm unlink --global",
+    "unlink:global": "pnpm unlink:cli && pnpm unlink:mcp && pnpm unlink:service",
     "setup-anvil": "pnpm install && pnpm build && pnpm link:global"
   },
   "devDependencies": {
