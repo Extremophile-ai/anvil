@@ -21,6 +21,7 @@ import { Runtime, type RuntimeConfig } from "../runtime/runtime.js";
 import type { StateStore } from "../state/store.js";
 import { createAnvilMcpServer } from "../tools/mcp-bridge.js";
 import type { ToolRegistry } from "../tools/registry.js";
+import type { GoalAssessment, GoalDefinition, GoalEvaluator } from "./goal.js";
 import { JobStore } from "./job-store.js";
 import { topologicalOrder, updateNode } from "./plan.js";
 import { HeuristicPlanner, type Planner } from "./planner.js";
@@ -65,6 +66,11 @@ export interface OrchestratorDeps {
    * `toolRegistry` is provided, so the agent must use Anvil's `write_file` etc.
    */
   disallowedTools?: string[];
+  /**
+   * Goal-mode judge. Required only for {@link Orchestrator.buildToward}; single
+   * builds (`build`) ignore it.
+   */
+  evaluator?: GoalEvaluator;
 }
 
 export type DeliveryMode = "none" | "branch" | "push" | "pr";
@@ -98,6 +104,13 @@ export interface BuildResult {
   corrections: string[];
 }
 
+export interface GoalResult extends BuildResult {
+  /** The judge's last verdict + how many iterations it took. */
+  goal: GoalAssessment & { iterations: number };
+  /** One BuildResult per iteration, oldest first. */
+  history: BuildResult[];
+}
+
 const DEFAULT_DISALLOWED_WHEN_BRIDGED: readonly string[] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
 
 export class Orchestrator {
@@ -113,6 +126,7 @@ export class Orchestrator {
   private readonly model: string;
   private readonly toolRegistry: ToolRegistry | undefined;
   private readonly disallowedTools: string[] | undefined;
+  private readonly evaluator: GoalEvaluator | undefined;
 
   private activeRuntime: RuntimeLike | undefined;
   private activeJobId: JobId | undefined;
@@ -133,6 +147,7 @@ export class Orchestrator {
     this.toolRegistry = deps.toolRegistry;
     this.disallowedTools =
       deps.disallowedTools ?? (deps.toolRegistry ? [...DEFAULT_DISALLOWED_WHEN_BRIDGED] : undefined);
+    this.evaluator = deps.evaluator;
   }
 
   /** True while a build is in progress. */
@@ -240,6 +255,89 @@ export class Orchestrator {
       this.activeRuntime = undefined;
       this.activeJobId = undefined;
     }
+  }
+
+  /**
+   * Goal-mode: run iterations of {@link build} until a {@link GoalEvaluator}
+   * reports the condition is satisfied, or `maxIterations` is reached. Mirrors
+   * Claude Code's `/goal` semantics, with the addition of optional verifier
+   * commands (e.g. `pnpm test`).
+   */
+  async buildToward(
+    initialTask: string,
+    goal: GoalDefinition,
+    options: BuildOptions = {},
+  ): Promise<GoalResult> {
+    if (!this.evaluator) {
+      throw new AnvilError(
+        "INVALID_INPUT",
+        "buildToward needs a GoalEvaluator. Pass `evaluator` to the Orchestrator.",
+      );
+    }
+    const maxIterations = goal.maxIterations ?? 5;
+    let task = initialTask;
+    const history: BuildResult[] = [];
+    let lastAssessment: GoalAssessment | undefined;
+
+    for (let iteration = 1; iteration <= maxIterations; iteration++) {
+      const buildResult = await this.build(task, options);
+      history.push(buildResult);
+      if (buildResult.job.status !== "succeeded") {
+        lastAssessment = {
+          satisfied: false,
+          reason: `Iteration ${iteration} build did not succeed (status: ${buildResult.job.status}).`,
+        };
+        break;
+      }
+      const summary =
+        buildResult.job.result ??
+        buildResult.plan.nodes.map((node) => `${node.id}: ${node.result ?? "(no result)"}`).join("; ");
+      const assessment = await this.evaluator.evaluate(goal, {
+        task: initialTask,
+        iteration,
+        lastResult: summary,
+      });
+      lastAssessment = assessment;
+      this.bus.publish(
+        buildResult.job.id,
+        "eval.run",
+        assessment.satisfied ? "info" : "warn",
+        `Goal ${assessment.satisfied ? "met" : "not yet met"}: ${assessment.reason}`,
+        { iteration, condition: goal.condition },
+      );
+      if (assessment.satisfied) break;
+      task =
+        `${initialTask}\n\n` +
+        `Iteration ${iteration} did not satisfy the goal "${goal.condition}". ` +
+        `Reason: ${assessment.reason}. Continue working toward it.`;
+    }
+
+    if (this.memory) {
+      await this.memory.remember({
+        type: "project",
+        description: `Goal: ${goal.condition.slice(0, 80)}`,
+        body: [
+          `Goal: ${goal.condition}`,
+          `Achieved: ${lastAssessment?.satisfied ?? false}`,
+          `Iterations: ${history.length}`,
+          `Final reason: ${lastAssessment?.reason ?? "(none)"}`,
+        ].join("\n"),
+        tags: ["goal"],
+      });
+    }
+
+    const final = history[history.length - 1];
+    if (!final) {
+      throw new AnvilError("RUNTIME_ERROR", "buildToward made no progress (no iterations ran).");
+    }
+    return {
+      ...final,
+      goal: {
+        ...(lastAssessment ?? { satisfied: false, reason: "No iterations ran." }),
+        iterations: history.length,
+      },
+      history,
+    };
   }
 
   // --- internals -----------------------------------------------------------

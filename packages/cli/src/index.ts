@@ -9,12 +9,19 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  CommandGoalEvaluator,
+  CompositeGoalEvaluator,
   Deliverer,
   EventBus,
+  type GoalDefinition,
+  type GoalEvaluator,
   JsonlLogger,
   LearningLoop,
+  LlmGoalEvaluator,
+  LocalSandbox,
   MemoryManager,
   Orchestrator,
+  Runtime,
   SkillFactory,
   SkillLibrary,
   StateStore,
@@ -46,8 +53,13 @@ function printHelp(): void {
       "",
       "Commands:",
       "  anvil build <task>                Run the orchestrator end to end",
+      "    [--goal <condition>] [--verify <cmd1,cmd2>] [--max-iterations <n>]",
       "    [--skip-delivery] [--skip-reflection] [--no-tools]",
       "    [--model <name>] [--max-turns <n>]",
+      "",
+      "  anvil goal <condition>            Iterate toward a goal — Anvil's port of /goal",
+      "    [--task <task>] [--verify <cmd1,cmd2>] [--max-iterations <n>]",
+      "    plus every `anvil build` option",
       "",
       "  anvil ingest [<dir>]              Profile the workspace and index its code",
       "",
@@ -63,7 +75,57 @@ function printHelp(): void {
   );
 }
 
-async function commandBuild(task: string, args: ParsedArgs): Promise<number> {
+function parseVerify(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  const commands = raw
+    .split(",")
+    .map((command) => command.trim())
+    .filter((command) => command.length > 0);
+  return commands.length > 0 ? commands : undefined;
+}
+
+function buildGoalDefinition(condition: string, args: ParsedArgs): GoalDefinition {
+  const definition: GoalDefinition = { condition };
+  const verify = parseVerify(flagString(args, "verify"));
+  if (verify) definition.verify = verify;
+  const maxIterations = flagInt(args, "max-iterations");
+  if (maxIterations !== undefined) definition.maxIterations = maxIterations;
+  return definition;
+}
+
+function buildEvaluator(
+  workspace: Workspace,
+  goal: GoalDefinition,
+  bus: EventBus,
+  model: string | undefined,
+): GoalEvaluator {
+  const evaluators: GoalEvaluator[] = [];
+  if (goal.verify && goal.verify.length > 0) {
+    evaluators.push(new CommandGoalEvaluator(new LocalSandbox({ workspace })));
+  }
+  const judgeRuntime = new Runtime({
+    bus,
+    config: {
+      cwd: workspace.root,
+      model: model ?? "haiku",
+      permissionMode: "bypassPermissions",
+      maxTurns: 2,
+      settingSources: [],
+      systemPrompt: "You are a strict goal-completion judge. Reply with JSON only.",
+    },
+  });
+  evaluators.push(new LlmGoalEvaluator(judgeRuntime));
+  return new CompositeGoalEvaluator(evaluators);
+}
+
+interface OrchestratorSetup {
+  orchestrator: Orchestrator;
+  store: StateStore;
+  workspace: Workspace;
+  bus: EventBus;
+}
+
+async function setupOrchestrator(args: ParsedArgs, goal?: GoalDefinition): Promise<OrchestratorSetup> {
   const workspace = new Workspace(process.cwd());
   const dataDir = join(workspace.root, ".anvil");
   ensureDir(dataDir);
@@ -77,6 +139,7 @@ async function commandBuild(task: string, args: ParsedArgs): Promise<number> {
     else if (event.kind === "approval.granted") process.stdout.write(`  · ${event.message}\n`);
     else if (event.kind === "healing.retry") process.stdout.write(`  ↻ ${event.message}\n`);
     else if (event.kind === "healing.escalated") process.stdout.write(`  ✗ ${event.message}\n`);
+    else if (event.kind === "eval.run") process.stdout.write(`  ⚖ ${event.message}\n`);
     else if (event.kind === "assistant.text") {
       const text = event.message.trim();
       if (text) process.stdout.write(`    ${text.slice(0, 200)}\n`);
@@ -101,6 +164,8 @@ async function commandBuild(task: string, args: ParsedArgs): Promise<number> {
   }
 
   const deliverer = existsSync(join(workspace.root, ".git")) ? new Deliverer({ workspace }) : undefined;
+  const evaluator = goal ? buildEvaluator(workspace, goal, bus, flagString(args, "judge-model")) : undefined;
+  const model = flagString(args, "model");
 
   const orchestrator = new Orchestrator({
     workspace,
@@ -110,20 +175,72 @@ async function commandBuild(task: string, args: ParsedArgs): Promise<number> {
     learning,
     ...(toolRegistry ? { toolRegistry } : {}),
     ...(deliverer ? { deliverer } : {}),
-    ...(flagString(args, "model") ? { model: flagString(args, "model") as string } : {}),
+    ...(model ? { model } : {}),
+    ...(evaluator ? { evaluator } : {}),
   });
+  return { orchestrator, store, workspace, bus };
+}
 
-  const result = await orchestrator.build(task, {
+function buildOptionsFromArgs(args: ParsedArgs): {
+  skipReflection: boolean;
+  delivery: "none" | "branch";
+  maxTurns?: number;
+} {
+  const options: { skipReflection: boolean; delivery: "none" | "branch"; maxTurns?: number } = {
     skipReflection: flagBool(args, "skip-reflection"),
     delivery: flagBool(args, "skip-delivery") ? "none" : "branch",
-    ...(flagInt(args, "max-turns") !== undefined ? { maxTurns: flagInt(args, "max-turns") as number } : {}),
-  });
+  };
+  const maxTurns = flagInt(args, "max-turns");
+  if (maxTurns !== undefined) options.maxTurns = maxTurns;
+  return options;
+}
 
-  store.close();
-  process.stdout.write(`\nstatus: ${result.job.status}\n`);
-  if (result.branch) process.stdout.write(`branch: ${result.branch}\n`);
-  if (result.pullRequestUrl) process.stdout.write(`PR:     ${result.pullRequestUrl}\n`);
-  return result.job.status === "succeeded" ? 0 : 1;
+async function commandBuild(task: string, args: ParsedArgs): Promise<number> {
+  const condition = flagString(args, "goal");
+  const goal = condition ? buildGoalDefinition(condition, args) : undefined;
+  const setup = await setupOrchestrator(args, goal);
+  try {
+    if (goal) {
+      const result = await setup.orchestrator.buildToward(task, goal, buildOptionsFromArgs(args));
+      process.stdout.write(
+        `\ngoal:     ${result.goal.satisfied ? "satisfied" : "not satisfied"} after ${result.goal.iterations} iteration(s)\n`,
+      );
+      process.stdout.write(`reason:   ${result.goal.reason}\n`);
+      process.stdout.write(`status:   ${result.job.status}\n`);
+      if (result.branch) process.stdout.write(`branch:   ${result.branch}\n`);
+      return result.goal.satisfied ? 0 : 1;
+    }
+    const result = await setup.orchestrator.build(task, buildOptionsFromArgs(args));
+    process.stdout.write(`\nstatus: ${result.job.status}\n`);
+    if (result.branch) process.stdout.write(`branch: ${result.branch}\n`);
+    if (result.pullRequestUrl) process.stdout.write(`PR:     ${result.pullRequestUrl}\n`);
+    return result.job.status === "succeeded" ? 0 : 1;
+  } finally {
+    setup.store.close();
+  }
+}
+
+async function commandGoal(args: ParsedArgs): Promise<number> {
+  const condition = args.positional.join(" ");
+  if (!condition) {
+    process.stderr.write("Usage: anvil goal <condition> [--task <task>] [--verify <cmds>] [--max-iterations <n>]\n");
+    return 1;
+  }
+  const task = flagString(args, "task") ?? `Work toward this goal: ${condition}`;
+  const goal = buildGoalDefinition(condition, args);
+  const setup = await setupOrchestrator(args, goal);
+  try {
+    const result = await setup.orchestrator.buildToward(task, goal, buildOptionsFromArgs(args));
+    process.stdout.write(
+      `\ngoal:     ${result.goal.satisfied ? "satisfied" : "not satisfied"} after ${result.goal.iterations} iteration(s)\n`,
+    );
+    process.stdout.write(`reason:   ${result.goal.reason}\n`);
+    process.stdout.write(`status:   ${result.job.status}\n`);
+    if (result.branch) process.stdout.write(`branch:   ${result.branch}\n`);
+    return result.goal.satisfied ? 0 : 1;
+  } finally {
+    setup.store.close();
+  }
 }
 
 async function commandIngest(args: ParsedArgs): Promise<number> {
@@ -234,6 +351,8 @@ async function main(): Promise<number> {
       }
       return commandBuild(task, args);
     }
+    case "goal":
+      return commandGoal(args);
     case "ingest":
       return commandIngest(args);
     case "memory":
