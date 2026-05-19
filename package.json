@@ -21,7 +21,13 @@
     "smoke:build": "pnpm build && tsc --noEmit -p smoke/tsconfig.json && tsx smoke/build.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "link:cli": "pnpm link --global --filter @anvil/cli",
+    "link:mcp": "pnpm link --global --filter @anvil/mcp-server",
+    "link:service": "pnpm link --global --filter @anvil/service",
+    "link:global": "pnpm link:cli && pnpm link:mcp && pnpm link:service",
+    "unlink:global": "pnpm --filter @anvil/cli unlink --global && pnpm --filter @anvil/mcp-server unlink --global && pnpm --filter @anvil/service unlink --global",
+    "setup-anvil": "pnpm install && pnpm build && pnpm link:global"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",

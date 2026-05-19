@@ -72,6 +72,29 @@ pnpm smoke        # end-to-end smoke against the built dist
 Requires Node.js 22+ and pnpm 10+. See [TESTING.md](TESTING.md) for the full
 testing guide, including the live runtime test and coverage.
 
+## Install the binaries on your PATH
+
+One-time, so `anvil`, `anvil-mcp`, and `anvil-service` work anywhere:
+
+```bash
+# First time only — sets PNPM_HOME and adds it to PATH (modifies ~/.zshrc).
+pnpm setup
+exec $SHELL                       # reload your shell
+
+# Then, from the Anvil repo root:
+pnpm setup-anvil                  # alias for: install + build + link:global
+
+# Or step by step:
+pnpm install
+pnpm build
+pnpm link:global                  # links @anvil/cli, @anvil/mcp-server, @anvil/service
+
+# Reverse it later if you need to:
+pnpm unlink:global
+```
+
+Once linked, any project can wire Anvil into Claude Code with `anvil init`.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
