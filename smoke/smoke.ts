@@ -292,6 +292,64 @@ await phase("orchestrator: plan, execute nodes, persist, succeed", async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+await phase("service: HTTP API + JSON contracts", async () => {
+  const { spawn } = await import("node:child_process");
+  const probeDir = tmp("svc");
+  const proc = spawn("node", [join(process.cwd(), "packages/service/dist/index.js")], {
+    cwd: probeDir,
+    env: { ...process.env, ANVIL_SERVICE_PORT: "0", HOME: probeDir },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let buffered = "";
+  const url = await new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("service did not start within 15s")), 15_000);
+    proc.stdout.on("data", (chunk) => {
+      buffered += String(chunk);
+      const match = /http:\/\/\S+/.exec(buffered);
+      if (match) {
+        clearTimeout(timer);
+        resolve(match[0]);
+      }
+    });
+    proc.on("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`service exited (code ${code}) before listening: ${buffered}`));
+    });
+  });
+
+  try {
+    const health = (await (await fetch(`${url}/healthz`)).json()) as { ok: boolean; version: string };
+    assert(health.ok === true, "/healthz did not return ok");
+    assert(typeof health.version === "string", "/healthz missing version");
+
+    const memory = (await (await fetch(`${url}/memory`)).json()) as unknown;
+    assert(Array.isArray(memory), "/memory should return an array");
+
+    const recallResponse = await fetch(`${url}/memory/recall`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "alpha bravo charlie" }),
+    });
+    assert(recallResponse.ok, `/memory/recall returned ${recallResponse.status}`);
+    const recall = (await recallResponse.json()) as unknown;
+    assert(Array.isArray(recall), "/memory/recall should return an array");
+
+    const missing = await fetch(`${url}/builds/job_does-not-exist`);
+    assert(missing.status === 404, `missing job should 404, got ${missing.status}`);
+
+    const badPost = await fetch(`${url}/builds`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert(badPost.status === 400, `missing task should 400, got ${badPost.status}`);
+  } finally {
+    proc.kill("SIGTERM");
+    await new Promise<void>((resolve) => proc.on("exit", () => resolve()));
+    rmSync(probeDir, { recursive: true, force: true });
+  }
+});
+
 await phase("mcp-server: stdio + tool catalogue", async () => {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");

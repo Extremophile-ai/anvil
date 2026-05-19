@@ -1,43 +1,15 @@
 /**
- * AnvilService — the runtime that backs the MCP server. Builds run
- * asynchronously: callers get a jobId immediately and poll `getStatus`.
+ * AnvilService — the engine backing every Anvil front door (the MCP server,
+ * the HTTP service, and any other transport you bolt on). Builds run
+ * asynchronously: callers get a `jobId` as soon as the run has started, while
+ * the build itself continues in the background.
  *
- * Pre-wires an Orchestrator with a Llm-judge evaluator so goal mode works
- * without per-call setup; `CommandGoalEvaluator` is added on the fly when a
- * goal carries `verify` commands.
+ * Pre-wires an Orchestrator with a goal-aware evaluator so `/goal`-style
+ * iterations work without per-call setup; `CommandGoalEvaluator` is added on
+ * the fly when a goal carries `verify` commands.
  */
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import {
-  AnvilError,
-  CommandGoalEvaluator,
-  CompositeGoalEvaluator,
-  Deliverer,
-  EventBus,
-  type GoalAssessment,
-  type GoalContext,
-  type GoalDefinition,
-  type GoalEvaluator,
-  type IngestionResult,
-  JobStore,
-  JsonlLogger,
-  LearningLoop,
-  LlmGoalEvaluator,
-  LocalSandbox,
-  MemoryManager,
-  Orchestrator,
-  Runtime,
-  SkillFactory,
-  SkillLibrary,
-  StateStore,
-  ToolRegistry,
-  Workspace,
-  WorkspaceIngestor,
-  builtinTools,
-  createEmbedder,
-  createLogFailureTool,
-  createSkillTool,
-} from "@anvil/core";
 import type {
   JobId,
   JobRecord,
@@ -45,6 +17,36 @@ import type {
   MemoryScope,
   RecallResult,
 } from "@anvil/shared";
+import { Deliverer } from "./delivery/deliverer.js";
+import { createEmbedder } from "./embeddings/index.js";
+import { EventBus } from "./events/bus.js";
+import {
+  CommandGoalEvaluator,
+  CompositeGoalEvaluator,
+  type GoalAssessment,
+  type GoalContext,
+  type GoalDefinition,
+  type GoalEvaluator,
+  LlmGoalEvaluator,
+} from "./orchestrator/goal.js";
+import type { IngestionResult } from "./ingestion/types.js";
+import { WorkspaceIngestor } from "./ingestion/ingestor.js";
+import { LearningLoop } from "./learning/loop.js";
+import { createLogFailureTool } from "./learning/log-failure-tool.js";
+import { AnvilError } from "./lib/errors.js";
+import { JsonlLogger } from "./lib/logger.js";
+import { Workspace } from "./lib/workspace.js";
+import { MemoryManager } from "./memory/manager.js";
+import { JobStore } from "./orchestrator/job-store.js";
+import { Orchestrator } from "./orchestrator/orchestrator.js";
+import { Runtime } from "./runtime/runtime.js";
+import { LocalSandbox } from "./sandbox/local.js";
+import { createSkillTool } from "./skills/create-skill-tool.js";
+import { SkillFactory } from "./skills/factory.js";
+import { SkillLibrary } from "./skills/library.js";
+import { StateStore } from "./state/store.js";
+import { builtinTools } from "./tools/builtins/index.js";
+import { ToolRegistry } from "./tools/registry.js";
 
 /** A goal-aware evaluator: it always runs the LLM judge, and adds a
  *  CommandGoalEvaluator on the fly when the goal supplies `verify` commands. */
@@ -209,6 +211,11 @@ export class AnvilService {
     return this.jobs.get(jobId);
   }
 
+  /** List every job, oldest first. */
+  listJobs(): JobRecord[] {
+    return this.jobs.list();
+  }
+
   /** Inject a correction into the running build. */
   steer(jobId: string, text: string): { ok: true } {
     if (this.activeJobId !== jobId) {
@@ -226,7 +233,7 @@ export class AnvilService {
     return { ok: true };
   }
 
-  /** Profile + index a workspace (CWD by default). */
+  /** Profile + index a workspace (this service's workspace by default). */
   async ingest(dir?: string): Promise<IngestionResult> {
     const ws = dir ? new Workspace(dir) : this.workspace;
     const embedder = await createEmbedder({ provider: "auto" });

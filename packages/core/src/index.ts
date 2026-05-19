@@ -20,5 +20,6 @@ export * from "./ingestion/index.js";
 export * from "./orchestrator/index.js";
 export * from "./sandbox/index.js";
 export * from "./delivery/index.js";
+export * from "./service.js";
 
 export const ANVIL_CORE_VERSION = "0.0.0";

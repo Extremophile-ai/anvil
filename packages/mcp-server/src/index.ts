@@ -12,8 +12,8 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { AnvilService } from "@anvil/core";
 import { z } from "zod";
-import { AnvilService } from "./service.js";
 
 interface ToolResult {
   content: Array<{ type: "text"; text: string }>;

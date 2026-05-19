@@ -7,10 +7,17 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "clean": "tsc -b --clean",
     "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@anvil/core": "workspace:*",
+    "@anvil/shared": "workspace:*",
+    "zod": "^4.4.3"
   }
 }
