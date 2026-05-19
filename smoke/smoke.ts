@@ -20,6 +20,8 @@ import {
   LearningLoop,
   McpManager,
   MemoryManager,
+  Orchestrator,
+  type RuntimeLike,
   Runtime,
   SelfHealer,
   SkillFactory,
@@ -33,7 +35,7 @@ import {
   createLogFailureTool,
   createSkillTool,
 } from "../packages/core/dist/index.js";
-import { type AnvilEvent, newJobId } from "../packages/shared/dist/index.js";
+import { type AnvilEvent, type JobId, type RunResult, newJobId } from "../packages/shared/dist/index.js";
 
 const results: boolean[] = [];
 
@@ -250,6 +252,42 @@ await phase("ingestion: stack detection, profile, code index + search", async ()
   assert(result.index.chunks > 0, "no code was indexed");
   const hits = await ingestor.search("amount paid at checkout");
   assert(hits[0]?.path === "src/checkout.ts", "semantic code search returned the wrong file");
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await phase("orchestrator: plan, execute nodes, persist, succeed", async () => {
+  const dir = tmp("orch");
+  const store = new StateStore(join(dir, "state.db"));
+  const fakeRuntime: RuntimeLike = {
+    running: false,
+    run: (_jobId: JobId, _task: string): Promise<RunResult> =>
+      Promise.resolve({
+        jobId: newJobId(),
+        ok: true,
+        result: "done",
+        numTurns: 1,
+        durationMs: 1,
+        costUsd: 0,
+        interrupted: false,
+      }),
+    steer: () => {},
+    interrupt: () => Promise.resolve(),
+  };
+  const orchestrator = new Orchestrator({
+    workspace: new Workspace(dir),
+    store,
+    bus: new EventBus(),
+    runtimeFactory: () => fakeRuntime,
+  });
+  const result = await orchestrator.build("Refactor the auth module", {
+    retry: { baseDelayMs: 1, jitter: false },
+  });
+  assert(result.job.status === "succeeded", "orchestrator did not succeed");
+  assert(
+    result.plan.nodes.every((node) => node.status === "done"),
+    "not every node finished done",
+  );
   store.close();
   rmSync(dir, { recursive: true, force: true });
 });
