@@ -292,6 +292,41 @@ await phase("orchestrator: plan, execute nodes, persist, succeed", async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+await phase("mcp-server: stdio + tool catalogue", async () => {
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const probeDir = tmp("mcp");
+  const transport = new StdioClientTransport({
+    command: "node",
+    args: ["packages/mcp-server/dist/index.js"],
+    cwd: process.cwd(),
+    env: { ...process.env, HOME: probeDir },
+  });
+  const client = new Client({ name: "anvil-mcp-smoke", version: "0.0.0" });
+  try {
+    await client.connect(transport);
+    const list = (await client.listTools()) as { tools: Array<{ name: string }> };
+    const names = list.tools.map((tool) => tool.name);
+    const expected = [
+      "build_feature",
+      "goal",
+      "get_status",
+      "steer",
+      "interrupt",
+      "ingest_workspace",
+      "recall_memory",
+      "list_memory",
+      "current_job",
+    ];
+    for (const expectedName of expected) {
+      assert(names.includes(expectedName), `tool "${expectedName}" missing from list_tools`);
+    }
+  } finally {
+    await client.close();
+    rmSync(probeDir, { recursive: true, force: true });
+  }
+});
+
 const passed = results.filter(Boolean).length;
 console.log(`\n${passed}/${results.length} phases passed`);
 process.exit(passed === results.length ? 0 : 1);

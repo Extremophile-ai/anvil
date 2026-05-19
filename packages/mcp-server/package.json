@@ -8,10 +8,18 @@
   "bin": {
     "anvil-mcp": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "clean": "tsc -b --clean",
     "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@anvil/core": "workspace:*",
+    "@anvil/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
   }
 }

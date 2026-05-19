@@ -11,6 +11,9 @@ importers:
       '@eslint/js':
         specifier: ^9.13.0
         version: 9.39.4
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@types/node':
         specifier: ^22.9.0
         version: 22.19.19
@@ -64,7 +67,20 @@ importers:
         specifier: ^22.19.19
         version: 22.19.19
 
-  packages/mcp-server: {}
+  packages/mcp-server:
+    dependencies:
+      '@anvil/core':
+        specifier: workspace:*
+        version: link:../core
+      '@anvil/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/service: {}
 
