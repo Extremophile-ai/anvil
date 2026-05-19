@@ -1,0 +1,17 @@
+{
+  "name": "@anvil/mcp-server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Exposes the Anvil harness over MCP (stdio). Kept deliberately thin.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "anvil-mcp": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "dev": "tsx src/index.ts"
+  }
+}

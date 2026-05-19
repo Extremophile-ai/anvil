@@ -1,0 +1,17 @@
+{
+  "name": "@anvil/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The `anvil` command-line interface.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "anvil": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "dev": "tsx src/index.ts"
+  }
+}

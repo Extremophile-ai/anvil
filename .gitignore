@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Anvil runtime artifacts
+logs/
+*.log
+.anvil/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
