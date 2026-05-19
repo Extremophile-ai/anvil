@@ -60,12 +60,13 @@ model.
 ```bash
 pnpm install      # install workspace dependencies
 pnpm build        # build all packages (tsc project references)
-pnpm typecheck    # type-check the whole monorepo
 pnpm lint         # eslint
-pnpm test         # vitest
+pnpm test         # vitest — unit + integration
+pnpm smoke        # end-to-end smoke against the built dist
 ```
 
-Requires Node.js 20+ and pnpm 10+.
+Requires Node.js 22+ and pnpm 10+. See [TESTING.md](TESTING.md) for the full
+testing guide, including the live runtime test and coverage.
 
 ## License
 
