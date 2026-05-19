@@ -16,6 +16,7 @@ import {
   rememberInputSchema,
 } from "@anvil/shared";
 import type { Embedder } from "../embeddings/embedder.js";
+import { slugify } from "../lib/text.js";
 import type { StateStore } from "../state/store.js";
 import { MemoryFileStore } from "./file-store.js";
 import { VectorIndex } from "./vector-index.js";
@@ -38,15 +39,6 @@ export interface RecallOptions {
   scope?: MemoryScope;
   type?: MemoryType;
   minScore?: number;
-}
-
-function slugify(text: string): string {
-  const slug = text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-  return slug || "fact";
 }
 
 function rowToFact(row: Record<string, unknown>): MemoryFact {
