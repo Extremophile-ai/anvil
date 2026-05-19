@@ -3,7 +3,7 @@
  *
  * Subsystems are added one module per phase. See ../../docs/architecture.md.
  * Shipped: lib, events, runtime, state, embeddings, memory, healing, tools,
- * mcp, learning, skills, ingestion.
+ * mcp, learning, skills, ingestion, orchestrator.
  */
 export * from "./lib/index.js";
 export * from "./events/index.js";
@@ -17,5 +17,6 @@ export * from "./mcp/index.js";
 export * from "./learning/index.js";
 export * from "./skills/index.js";
 export * from "./ingestion/index.js";
+export * from "./orchestrator/index.js";
 
 export const ANVIL_CORE_VERSION = "0.0.0";

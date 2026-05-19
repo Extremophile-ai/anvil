@@ -106,4 +106,9 @@ export const MIGRATIONS: readonly string[] = [
 
   CREATE INDEX idx_code_chunks_path ON code_chunks(path);
   `,
+
+  // v5 — the orchestrator stores a job's plan as JSON on the jobs row.
+  `
+  ALTER TABLE jobs ADD COLUMN plan TEXT;
+  `,
 ];

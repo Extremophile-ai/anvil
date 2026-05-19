@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
@@ -9,6 +10,7 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
+      globals: { ...globals.node },
     },
   },
 );
