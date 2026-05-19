@@ -14,14 +14,15 @@ and builds the tooling that workspace needs.
 
 ## Status
 
-✅ **Milestone A — the harness core — is complete.** All ten `@anvil/core`
-subsystems build, lint, and test green (64 unit tests, plus an integration
-smoke per phase): runtime, state, hybrid memory, self-healing, the tool layer,
-the MCP manager, the learning loop, the skill factory, and workspace ingestion.
+✅ **Milestones A and B are complete.** The harness core (runtime, state,
+hybrid memory, self-healing, tools, MCP manager, learning loop, skill factory,
+workspace ingestion) plus the end-to-end build engine (plan DAG, JobStore,
+heuristic + LLM planner, local/Docker sandbox, delivery via feature-branch and
+`gh`, and the orchestrator that wires them) — 97 unit tests and 9 offline
+smoke phases, all green.
 
-Next: **Milestone B** wires these into the end-to-end build orchestrator;
-**Milestone C** hardens the CLI, MCP server, and HTTP service. See
-[docs/architecture.md](docs/architecture.md).
+Next: **Milestone C** hardens the CLI, MCP server, and HTTP service over the
+core engine. See [docs/architecture.md](docs/architecture.md).
 
 ## Core idea
 
