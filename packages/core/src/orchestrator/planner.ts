@@ -191,17 +191,22 @@ export class LlmPlanner implements Planner {
 /**
  * Resolve which {@link Planner} to use based on environment variables.
  *
- * - Default: {@link HeuristicPlanner} (offline, deterministic).
+ * - Default: {@link HeuristicPlanner} (offline, deterministic). Selected when
+ *   `ANVIL_PLANNER` is unset, empty, or `"heuristic"`.
  * - When `ANVIL_PLANNER=llm`, returns an {@link LlmPlanner} backed by a
  *   dedicated small Haiku runtime. The runtime is intentionally separate from
  *   the orchestrator's main agent runtime so planning is fast and cheap:
  *   `maxTurns: 3`, `permissionMode: "bypassPermissions"`, `settingSources: []`.
  *   The model is overridable via `ANVIL_PLANNER_MODEL` (defaults to `"haiku"`).
- *   Empty-string env values are treated as unset.
+ * - Any other non-empty value for `ANVIL_PLANNER` is treated as a typo: a
+ *   single warning is written to stderr and the heuristic planner is returned.
  */
 export function selectPlannerFromEnv(deps: { bus: EventBus; cwd: string }): Planner {
-  const mode = process.env.ANVIL_PLANNER;
-  if (mode === "llm") {
+  const raw = process.env.ANVIL_PLANNER;
+  if (raw === undefined || raw === "" || raw === "heuristic") {
+    return new HeuristicPlanner();
+  }
+  if (raw === "llm") {
     const runtime = new Runtime({
       bus: deps.bus,
       config: {
@@ -214,5 +219,8 @@ export function selectPlannerFromEnv(deps: { bus: EventBus; cwd: string }): Plan
     });
     return new LlmPlanner(runtime);
   }
+  process.stderr.write(
+    `anvil: unknown ANVIL_PLANNER value "${raw}", falling back to HeuristicPlanner\n`,
+  );
   return new HeuristicPlanner();
 }

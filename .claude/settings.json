@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "mcp__anvil__goal",
-      "mcp__anvil__get_status"
+      "mcp__anvil__get_status",
+      "mcp__anvil__current_job",
+      "mcp__anvil__interrupt"
     ]
   }
 }
