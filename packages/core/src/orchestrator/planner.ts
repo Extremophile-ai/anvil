@@ -7,9 +7,10 @@
  * shared plan schema.
  */
 import { type Plan, type PlanNode, type PlanSurface, newJobId, planSchema } from "@anvil/shared";
+import type { EventBus } from "../events/bus.js";
 import { AnvilError } from "../lib/errors.js";
 import { truncate } from "../lib/text.js";
-import type { Runtime } from "../runtime/runtime.js";
+import { Runtime } from "../runtime/runtime.js";
 import type { Workspace } from "../lib/workspace.js";
 
 export interface PlanRequest {
@@ -181,4 +182,37 @@ export class LlmPlanner implements Planner {
       });
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Env-driven planner selection.
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve which {@link Planner} to use based on environment variables.
+ *
+ * - Default: {@link HeuristicPlanner} (offline, deterministic).
+ * - When `ANVIL_PLANNER=llm`, returns an {@link LlmPlanner} backed by a
+ *   dedicated small Haiku runtime. The runtime is intentionally separate from
+ *   the orchestrator's main agent runtime so planning is fast and cheap:
+ *   `maxTurns: 3`, `permissionMode: "bypassPermissions"`, `settingSources: []`.
+ *   The model is overridable via `ANVIL_PLANNER_MODEL` (defaults to `"haiku"`).
+ *   Empty-string env values are treated as unset.
+ */
+export function selectPlannerFromEnv(deps: { bus: EventBus; cwd: string }): Planner {
+  const mode = process.env.ANVIL_PLANNER;
+  if (mode === "llm") {
+    const runtime = new Runtime({
+      bus: deps.bus,
+      config: {
+        cwd: deps.cwd,
+        model: process.env.ANVIL_PLANNER_MODEL || "haiku",
+        permissionMode: "bypassPermissions",
+        maxTurns: 3,
+        settingSources: [],
+      },
+    });
+    return new LlmPlanner(runtime);
+  }
+  return new HeuristicPlanner();
 }

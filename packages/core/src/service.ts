@@ -39,6 +39,7 @@ import { Workspace } from "./lib/workspace.js";
 import { MemoryManager } from "./memory/manager.js";
 import { JobStore } from "./orchestrator/job-store.js";
 import { Orchestrator } from "./orchestrator/orchestrator.js";
+import { selectPlannerFromEnv } from "./orchestrator/planner.js";
 import { Runtime } from "./runtime/runtime.js";
 import { LocalSandbox } from "./sandbox/local.js";
 import { createSkillTool } from "./skills/create-skill-tool.js";
@@ -139,6 +140,8 @@ export class AnvilService {
     });
     const evaluator = new SmartGoalEvaluator(new LlmGoalEvaluator(judgeRuntime), workspace);
 
+    const planner = selectPlannerFromEnv({ bus, cwd: workspace.root });
+
     const orchestrator = new Orchestrator({
       workspace,
       store,
@@ -147,6 +150,7 @@ export class AnvilService {
       learning,
       toolRegistry,
       evaluator,
+      planner,
       ...(deliverer ? { deliverer } : {}),
     });
 

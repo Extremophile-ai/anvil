@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { HeuristicPlanner, extractJson } from "./planner.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { EventBus } from "../events/bus.js";
+import { HeuristicPlanner, LlmPlanner, extractJson, selectPlannerFromEnv } from "./planner.js";
 import { topologicalOrder } from "./plan.js";
 
 describe("HeuristicPlanner", () => {
@@ -45,5 +46,45 @@ describe("extractJson", () => {
 
   it("returns undefined when there is no JSON", () => {
     expect(extractJson("nothing structured here")).toBeUndefined();
+  });
+});
+
+describe("selectPlannerFromEnv", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("defaults to HeuristicPlanner when ANVIL_PLANNER is unset", () => {
+    vi.stubEnv("ANVIL_PLANNER", "");
+    const planner = selectPlannerFromEnv({ bus: new EventBus(), cwd: "/tmp" });
+    expect(planner).toBeInstanceOf(HeuristicPlanner);
+  });
+
+  it("returns an LlmPlanner when ANVIL_PLANNER=llm", () => {
+    vi.stubEnv("ANVIL_PLANNER", "llm");
+    const planner = selectPlannerFromEnv({ bus: new EventBus(), cwd: "/tmp" });
+    expect(planner).toBeInstanceOf(LlmPlanner);
+  });
+
+  it("honors ANVIL_PLANNER_MODEL when selecting the LlmPlanner runtime", () => {
+    vi.stubEnv("ANVIL_PLANNER", "llm");
+    vi.stubEnv("ANVIL_PLANNER_MODEL", "claude-haiku-custom");
+    const planner = selectPlannerFromEnv({ bus: new EventBus(), cwd: "/tmp" });
+    expect(planner).toBeInstanceOf(LlmPlanner);
+    // Reach into the private runtime config to confirm the env-driven model
+    // landed on the dedicated Haiku planner runtime.
+    const runtime = (planner as unknown as { runtime: { config: { model?: string; maxTurns?: number; permissionMode?: string; settingSources?: readonly string[] } } }).runtime;
+    expect(runtime.config.model).toBe("claude-haiku-custom");
+    expect(runtime.config.maxTurns).toBe(3);
+    expect(runtime.config.permissionMode).toBe("bypassPermissions");
+    expect(runtime.config.settingSources).toEqual([]);
+  });
+
+  it("defaults the LlmPlanner runtime to haiku when ANVIL_PLANNER_MODEL is unset", () => {
+    vi.stubEnv("ANVIL_PLANNER", "llm");
+    vi.stubEnv("ANVIL_PLANNER_MODEL", "");
+    const planner = selectPlannerFromEnv({ bus: new EventBus(), cwd: "/tmp" });
+    const runtime = (planner as unknown as { runtime: { config: { model?: string } } }).runtime;
+    expect(runtime.config.model).toBe("haiku");
   });
 });
