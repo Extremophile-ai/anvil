@@ -7,7 +7,8 @@
  *   init [<dir>]     set up .anvil/ and register the MCP server
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   CommandGoalEvaluator,
   CompositeGoalEvaluator,
@@ -299,6 +300,16 @@ async function commandMemory(args: ParsedArgs): Promise<number> {
   return 1;
 }
 
+/** Resolve the absolute path to the anvil-mcp dist, so .mcp.json doesn't
+ *  depend on PATH — GUI-launched MCP clients (Claude Code on macOS, Cursor,
+ *  etc.) don't inherit the user's shell PATH and can't find `anvil-mcp`. */
+function resolveAnvilMcpDist(): string | undefined {
+  // packages/cli/dist/index.js → packages/mcp-server/dist/index.js
+  const cliDistDir = dirname(fileURLToPath(import.meta.url));
+  const candidate = join(cliDistDir, "..", "..", "mcp-server", "dist", "index.js");
+  return existsSync(candidate) ? candidate : undefined;
+}
+
 function commandInit(args: ParsedArgs): number {
   const workspace = new Workspace(workspaceDir(args.positional));
   const dataDir = join(workspace.root, ".anvil");
@@ -319,15 +330,24 @@ function commandInit(args: ParsedArgs): number {
     }
   }
   const servers =
-    (config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
+    config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
       ? (config.mcpServers as Record<string, unknown>)
-      : {});
-  servers.anvil = { type: "stdio", command: "anvil-mcp", args: [] };
+      : {};
+
+  const distPath = resolveAnvilMcpDist();
+  servers.anvil = distPath
+    ? { type: "stdio", command: process.execPath, args: [distPath] }
+    : { type: "stdio", command: "anvil-mcp", args: [] };
   config.mcpServers = servers;
   writeFileSync(mcpPath, `${JSON.stringify(config, null, 2)}\n`);
 
   process.stdout.write(`Initialised .anvil/ at ${workspace.root}\n`);
   process.stdout.write(`Wrote ${mcpPath} — Claude Code can now invoke anvil-mcp.\n`);
+  if (distPath) {
+    process.stdout.write(`  using absolute paths (command: ${process.execPath}, args: [${distPath}])\n`);
+  } else {
+    process.stdout.write(`  using PATH lookup (command: anvil-mcp) — link binaries first if Claude Code can't find it.\n`);
+  }
   return 0;
 }
 
