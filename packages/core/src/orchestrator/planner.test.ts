@@ -52,6 +52,7 @@ describe("extractJson", () => {
 describe("selectPlannerFromEnv", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("defaults to HeuristicPlanner when ANVIL_PLANNER is unset", () => {
@@ -86,5 +87,17 @@ describe("selectPlannerFromEnv", () => {
     const planner = selectPlannerFromEnv({ bus: new EventBus(), cwd: "/tmp" });
     const runtime = (planner as unknown as { runtime: { config: { model?: string } } }).runtime;
     expect(runtime.config.model).toBe("haiku");
+  });
+
+  it("warns on stderr and falls back to HeuristicPlanner for unrecognized values", () => {
+    vi.stubEnv("ANVIL_PLANNER", "bogus");
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const planner = selectPlannerFromEnv({ bus: new EventBus(), cwd: "/tmp" });
+    expect(planner).toBeInstanceOf(HeuristicPlanner);
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+    const message = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+    expect(message).toContain("ANVIL_PLANNER");
+    expect(message).toContain("bogus");
+    expect(message).toContain("HeuristicPlanner");
   });
 });

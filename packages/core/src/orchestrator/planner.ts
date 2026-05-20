@@ -198,9 +198,12 @@ export class LlmPlanner implements Planner {
  *   `maxTurns: 3`, `permissionMode: "bypassPermissions"`, `settingSources: []`.
  *   The model is overridable via `ANVIL_PLANNER_MODEL` (defaults to `"haiku"`).
  *   Empty-string env values are treated as unset.
+ * - Any other non-empty value for `ANVIL_PLANNER` is treated as a typo: a
+ *   warning is written to stderr and the heuristic planner is returned.
  */
 export function selectPlannerFromEnv(deps: { bus: EventBus; cwd: string }): Planner {
-  const mode = process.env.ANVIL_PLANNER;
+  const raw = process.env.ANVIL_PLANNER;
+  const mode = raw && raw.length > 0 ? raw : undefined;
   if (mode === "llm") {
     const runtime = new Runtime({
       bus: deps.bus,
@@ -213,6 +216,11 @@ export function selectPlannerFromEnv(deps: { bus: EventBus; cwd: string }): Plan
       },
     });
     return new LlmPlanner(runtime);
+  }
+  if (mode !== undefined) {
+    process.stderr.write(
+      `[anvil] Ignoring unrecognized ANVIL_PLANNER="${mode}"; expected "llm". Falling back to HeuristicPlanner.\n`,
+    );
   }
   return new HeuristicPlanner();
 }
