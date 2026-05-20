@@ -7,7 +7,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseDocument, serializeDocument } from "../memory/frontmatter.js";
-import type { Skill, SkillKind } from "./types.js";
+import type { Skill, SkillDraft, SkillKind } from "./types.js";
+import { validateSkill } from "./validate.js";
 
 const SUFFIX = ".skill.md";
 const SKILL_KINDS: readonly SkillKind[] = ["skill", "tool", "plugin"];
@@ -59,22 +60,43 @@ export class SkillLibrary {
   get(name: string): Skill | undefined {
     const path = this.file(name);
     if (!existsSync(path)) return undefined;
-    const { frontmatter, body } = parseDocument(readFileSync(path, "utf8"));
-    const now = new Date().toISOString();
-    const kind = (frontmatter.kind ?? "skill") as SkillKind;
-    return {
-      id: frontmatter.id ?? `skill_${name}`,
-      name,
-      kind: SKILL_KINDS.includes(kind) ? kind : "skill",
-      description: frontmatter.description ?? "",
-      content: body,
-      capabilities: parseJsonArray(frontmatter.capabilities),
-      tags: parseJsonArray(frontmatter.tags),
-      version: Number(frontmatter.version ?? "1") || 1,
-      validated: frontmatter.validated === "true",
-      createdAt: frontmatter.created ?? now,
-      updatedAt: frontmatter.updated ?? now,
+    let skill: Skill;
+    try {
+      const { frontmatter, body } = parseDocument(readFileSync(path, "utf8"));
+      const now = new Date().toISOString();
+      const kind = (frontmatter.kind ?? "skill") as SkillKind;
+      skill = {
+        id: frontmatter.id ?? `skill_${name}`,
+        name,
+        kind: SKILL_KINDS.includes(kind) ? kind : "skill",
+        description: frontmatter.description ?? "",
+        content: body,
+        capabilities: parseJsonArray(frontmatter.capabilities),
+        tags: parseJsonArray(frontmatter.tags),
+        version: Number(frontmatter.version ?? "1") || 1,
+        validated: frontmatter.validated === "true",
+        createdAt: frontmatter.created ?? now,
+        updatedAt: frontmatter.updated ?? now,
+      };
+    } catch {
+      process.stderr.write(`anvil: skipping invalid skill "${name}": unreadable file\n`);
+      return undefined;
+    }
+
+    const draft: SkillDraft = {
+      name: skill.name,
+      kind: skill.kind,
+      description: skill.description,
+      content: skill.content,
+      capabilities: skill.capabilities,
+      tags: skill.tags,
     };
+    const validation = validateSkill(draft);
+    if (!validation.ok) {
+      process.stderr.write(`anvil: skipping invalid skill "${name}": ${validation.issues.join("; ")}\n`);
+      return undefined;
+    }
+    return skill;
   }
 
   list(): Skill[] {
