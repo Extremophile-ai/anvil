@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "anvil": {
+      "type": "stdio",
+      "command": "/opt/homebrew/Cellar/node/24.8.0/bin/node",
+      "args": [
+        "/Users/godspower/Desktop/Mazicorp/Anvil/packages/mcp-server/dist/index.js"
+      ]
+    }
+  }
+}
