@@ -18,6 +18,8 @@ import type { Workspace } from "../lib/workspace.js";
 import type { LearningLoop } from "../learning/loop.js";
 import type { MemoryManager } from "../memory/manager.js";
 import { Runtime, type RuntimeConfig } from "../runtime/runtime.js";
+import type { SkillLibrary } from "../skills/library.js";
+import type { Skill } from "../skills/types.js";
 import type { StateStore } from "../state/store.js";
 import { createAnvilMcpServer } from "../tools/mcp-bridge.js";
 import type { ToolRegistry } from "../tools/registry.js";
@@ -71,6 +73,16 @@ export interface OrchestratorDeps {
    * builds (`build`) ignore it.
    */
   evaluator?: GoalEvaluator;
+  /**
+   * When provided, validated skills matching the task are surfaced into the
+   * agent's system prompt so the agent can reuse them instead of reinventing.
+   */
+  skills?: SkillLibrary;
+  /**
+   * Maximum number of validated skills to surface in the system prompt.
+   * Defaults to 5.
+   */
+  maxSurfacedSkills?: number;
 }
 
 export type DeliveryMode = "none" | "branch" | "push" | "pr";
@@ -112,6 +124,7 @@ export interface GoalResult extends BuildResult {
 }
 
 const DEFAULT_DISALLOWED_WHEN_BRIDGED: readonly string[] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
+const DEFAULT_MAX_SURFACED_SKILLS = 5;
 
 export class Orchestrator {
   private readonly bus: EventBus;
@@ -127,6 +140,8 @@ export class Orchestrator {
   private readonly toolRegistry: ToolRegistry | undefined;
   private readonly disallowedTools: string[] | undefined;
   private readonly evaluator: GoalEvaluator | undefined;
+  private readonly skills: SkillLibrary | undefined;
+  private readonly maxSurfacedSkills: number;
 
   private activeRuntime: RuntimeLike | undefined;
   private activeJobId: JobId | undefined;
@@ -148,6 +163,8 @@ export class Orchestrator {
     this.disallowedTools =
       deps.disallowedTools ?? (deps.toolRegistry ? [...DEFAULT_DISALLOWED_WHEN_BRIDGED] : undefined);
     this.evaluator = deps.evaluator;
+    this.skills = deps.skills;
+    this.maxSurfacedSkills = deps.maxSurfacedSkills ?? DEFAULT_MAX_SURFACED_SKILLS;
   }
 
   /** True while a build is in progress. */
@@ -198,11 +215,22 @@ export class Orchestrator {
         : undefined;
       const disallowedTools = options.disallowedTools ?? this.disallowedTools;
 
+      const surfacedSkills = this.recallSkills(task);
+      if (surfacedSkills.length > 0) {
+        this.bus.publish(
+          job.id,
+          "skill.surfaced",
+          "info",
+          `Surfacing ${surfacedSkills.length} validated skill(s) into the agent prompt.`,
+          { skills: surfacedSkills.map((s) => s.name) },
+        );
+      }
+
       const runtimeConfig: RuntimeConfig = {
         cwd: this.workspace.root,
         model: options.model ?? this.model,
         permissionMode: options.permissionMode ?? "bypassPermissions",
-        systemPrompt: buildSystemPrompt(),
+        systemPrompt: buildSystemPrompt({ skills: surfacedSkills }),
         // The orchestrator owns the autonomous instruction set: it inherits
         // workspace conventions ("project") but never user-global Claude Code
         // settings, which carry interactive-mode rules like "seek approval
@@ -347,6 +375,19 @@ export class Orchestrator {
     const hits = await this.memory.recall(task, { topK: 3 });
     if (hits.length === 0) return undefined;
     return hits.map((hit) => `- ${hit.fact.description}: ${hit.fact.body}`).join("\n");
+  }
+
+  /**
+   * Pull the best-matching validated skills from the library for this task.
+   * Unvalidated skills are filtered out so the agent never sees skills that
+   * failed validation.
+   */
+  private recallSkills(task: string): Skill[] {
+    if (!this.skills) return [];
+    return this.skills
+      .search(task)
+      .filter((skill) => skill.validated)
+      .slice(0, this.maxSurfacedSkills);
   }
 
   private async executePlan(

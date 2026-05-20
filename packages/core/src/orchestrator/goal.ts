@@ -91,6 +91,20 @@ export class LlmGoalEvaluator implements GoalEvaluator {
   }
 }
 
+/**
+ * Split a shell-style command on top-level `&&` separators so that chained
+ * commands like `pnpm build && pnpm lint && pnpm test` execute as three
+ * separate sandbox invocations (the {@link Sandbox} contract is no-shell). We
+ * intentionally do not implement full shell parsing — `&&` covers the common
+ * verifier idiom and keeps semantics predictable.
+ */
+function splitOnAndAnd(command: string): string[] {
+  return command
+    .split(/&&/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+}
+
 /** Run verify commands in the sandbox; every command must exit 0. */
 export class CommandGoalEvaluator implements GoalEvaluator {
   constructor(private readonly sandbox: Sandbox) {}
@@ -101,20 +115,22 @@ export class CommandGoalEvaluator implements GoalEvaluator {
       return { satisfied: true, reason: "No verify commands configured." };
     }
     for (const command of commands) {
-      const [head, ...rest] = command.split(/\s+/);
-      if (head === undefined || head.length === 0) continue;
-      try {
-        const result = await this.sandbox.exec(head, rest);
-        if (result.code !== 0) {
-          const detail = (result.stderr || result.stdout).trim().slice(0, 240);
-          return {
-            satisfied: false,
-            reason: `\`${command}\` exited ${result.code}: ${detail}`,
-            details: { command, exitCode: result.code },
-          };
+      for (const segment of splitOnAndAnd(command)) {
+        const [head, ...rest] = segment.split(/\s+/);
+        if (head === undefined || head.length === 0) continue;
+        try {
+          const result = await this.sandbox.exec(head, rest);
+          if (result.code !== 0) {
+            const detail = (result.stderr || result.stdout).trim().slice(0, 240);
+            return {
+              satisfied: false,
+              reason: `\`${command}\` exited ${result.code}: ${detail}`,
+              details: { command, segment, exitCode: result.code },
+            };
+          }
+        } catch (err) {
+          return { satisfied: false, reason: `\`${command}\` failed to run: ${errorMessage(err)}` };
         }
-      } catch (err) {
-        return { satisfied: false, reason: `\`${command}\` failed to run: ${errorMessage(err)}` };
       }
     }
     return { satisfied: true, reason: "All verify commands exited 0." };

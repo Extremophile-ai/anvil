@@ -1,7 +1,12 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { JobId, RunResult } from "@anvil/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventBus } from "../events/bus.js";
 import { Workspace } from "../lib/workspace.js";
+import { SkillLibrary } from "../skills/library.js";
+import type { Skill } from "../skills/types.js";
 import { StateStore } from "../state/store.js";
 import { Orchestrator, type RuntimeLike } from "./orchestrator.js";
 
@@ -61,6 +66,23 @@ class FakeRuntime implements RuntimeLike {
   interrupt(): Promise<void> {
     return Promise.resolve();
   }
+}
+
+function makeSkill(overrides: Partial<Skill> = {}): Skill {
+  return {
+    id: "skill_test",
+    name: "render-invoice",
+    kind: "skill",
+    description: "Render an invoice as a PDF document",
+    content: "# Render Invoice\n\nProduce a well-formed invoice PDF here.",
+    capabilities: ["invoice", "pdf"],
+    tags: ["skill", "invoice"],
+    version: 1,
+    validated: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 describe("Orchestrator", () => {
@@ -187,5 +209,120 @@ describe("Orchestrator", () => {
     expect(capturedConfig?.disallowedTools).toEqual(
       expect.arrayContaining(["Write", "Edit", "MultiEdit", "NotebookEdit"]),
     );
+  });
+
+  describe("with a SkillLibrary", () => {
+    let dir: string;
+    let library: SkillLibrary;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), "anvil-orch-skills-"));
+      library = new SkillLibrary(dir);
+    });
+
+    afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+    it("surfaces validated matching skills into the agent's system prompt", async () => {
+      library.save(makeSkill({ name: "render-invoice", capabilities: ["invoice", "pdf"], validated: true }));
+      library.save(
+        makeSkill({
+          name: "draft-invoice",
+          description: "Draft invoice payload",
+          content: "# Draft Invoice",
+          capabilities: ["invoice", "draft"],
+          tags: ["skill", "invoice"],
+          validated: false,
+        }),
+      );
+      library.save(
+        makeSkill({
+          name: "publish-newsletter",
+          description: "Schedule outbound newsletter delivery",
+          content: "# Publish Newsletter",
+          capabilities: ["newsletter", "schedule"],
+          tags: ["skill", "messaging"],
+          validated: true,
+        }),
+      );
+
+      let capturedSystemPrompt: string | undefined;
+      orchestrator = new Orchestrator({
+        workspace: new Workspace("/tmp/anvil-orch-tests"),
+        store,
+        bus: new EventBus(),
+        skills: library,
+        runtimeFactory: (config) => {
+          capturedSystemPrompt = config.systemPrompt;
+          return fake;
+        },
+      });
+
+      await orchestrator.build("Produce invoice PDF for billing", { retry: fastRetry });
+
+      expect(capturedSystemPrompt).toBeDefined();
+      expect(capturedSystemPrompt).toContain("Validated library skills");
+      expect(capturedSystemPrompt).toContain("render-invoice");
+      // Unvalidated skills must never be surfaced.
+      expect(capturedSystemPrompt).not.toContain("draft-invoice");
+      // Unrelated validated skills should not match the query.
+      expect(capturedSystemPrompt).not.toContain("publish-newsletter");
+    });
+
+    it("emits a skill.surfaced event when validated skills match", async () => {
+      library.save(makeSkill({ name: "render-invoice", capabilities: ["invoice", "pdf"], validated: true }));
+
+      const bus = new EventBus();
+      const surfaced: Array<{ message: string; data?: Record<string, unknown> }> = [];
+      bus.on((event) => {
+        if (event.kind === "skill.surfaced") {
+          const entry: { message: string; data?: Record<string, unknown> } = { message: event.message };
+          if (event.data !== undefined) entry.data = event.data;
+          surfaced.push(entry);
+        }
+      });
+
+      orchestrator = new Orchestrator({
+        workspace: new Workspace("/tmp/anvil-orch-tests"),
+        store,
+        bus,
+        skills: library,
+        runtimeFactory: () => fake,
+      });
+
+      await orchestrator.build("Produce invoice PDF for billing", { retry: fastRetry });
+
+      expect(surfaced.length).toBe(1);
+      expect(surfaced[0]?.data?.skills).toEqual(["render-invoice"]);
+    });
+
+    it("omits the skills block when no validated skill matches", async () => {
+      library.save(
+        makeSkill({
+          name: "publish-newsletter",
+          description: "Schedule outbound newsletter delivery",
+          content: "# Publish Newsletter",
+          capabilities: ["newsletter", "schedule"],
+          tags: ["skill", "messaging"],
+          validated: true,
+        }),
+      );
+
+      let capturedSystemPrompt: string | undefined;
+      orchestrator = new Orchestrator({
+        workspace: new Workspace("/tmp/anvil-orch-tests"),
+        store,
+        bus: new EventBus(),
+        skills: library,
+        runtimeFactory: (config) => {
+          capturedSystemPrompt = config.systemPrompt;
+          return fake;
+        },
+      });
+
+      await orchestrator.build("Refactor the auth module", { retry: fastRetry });
+
+      expect(capturedSystemPrompt).toBeDefined();
+      expect(capturedSystemPrompt).not.toContain("Validated library skills");
+    });
   });
 });

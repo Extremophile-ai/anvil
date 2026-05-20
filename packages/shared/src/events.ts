@@ -39,6 +39,7 @@ export type AnvilEventKind =
   | "reflection.completed"
   | "eval.run"
   | "skill.created"
+  | "skill.surfaced"
   | "ingest.completed";
 
 export interface AnvilEvent {
