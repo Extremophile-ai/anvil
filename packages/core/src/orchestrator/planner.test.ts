@@ -100,4 +100,15 @@ describe("selectPlannerFromEnv", () => {
     expect(message).toContain("bogus");
     expect(message).toContain("HeuristicPlanner");
   });
+
+  it("emits the exact unknown-value warning format on stderr", () => {
+    vi.stubEnv("ANVIL_PLANNER", "weird-value");
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const planner = selectPlannerFromEnv({ bus: new EventBus(), cwd: "/tmp" });
+    expect(planner).toBeInstanceOf(HeuristicPlanner);
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+    expect(stderrSpy).toHaveBeenCalledWith(
+      'anvil: unknown ANVIL_PLANNER value "weird-value", falling back to HeuristicPlanner\n',
+    );
+  });
 });
