@@ -6,7 +6,8 @@
       "mcp__anvil__current_job",
       "mcp__anvil__interrupt",
       "Bash(ls -la /tmp/anvil-issues/ 2>/dev/null; echo \"---\"; git status)",
-      "Read(//private/tmp/anvil-issues/**)"
+      "Read(//private/tmp/anvil-issues/**)",
+      "Bash(xargs -I {} git show --stat {})"
     ]
   }
 }
