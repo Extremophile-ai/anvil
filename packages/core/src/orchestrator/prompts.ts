@@ -4,6 +4,7 @@
  */
 import type { Plan, PlanNode } from "@anvil/shared";
 import { truncate } from "../lib/text.js";
+import type { Skill } from "../skills/types.js";
 
 export interface NodePromptInput {
   task: string;
@@ -12,12 +13,31 @@ export interface NodePromptInput {
   context?: string;
 }
 
-export function buildSystemPrompt(): string {
-  return [
+export interface SystemPromptOptions {
+  /** Validated SkillLibrary skills to surface to the agent. */
+  skills?: readonly Skill[];
+}
+
+export function buildSystemPrompt(options: SystemPromptOptions = {}): string {
+  const base = [
     "You are Anvil's build agent, executing one step of a larger plan at a time.",
     "Stay within the workspace. Make small, focused changes. Run tests as you go.",
     "When you have finished the assigned step, summarize what you did in a short paragraph and stop. Do not call any more tools after the summary.",
   ].join(" ");
+
+  const skills = options.skills ?? [];
+  if (skills.length === 0) return base;
+
+  const lines = skills.map((skill) => {
+    const caps = skill.capabilities.length > 0 ? ` [${skill.capabilities.join(", ")}]` : "";
+    return `- ${skill.name}${caps}: ${skill.description}`;
+  });
+  return [
+    base,
+    "",
+    "Validated library skills available for reuse — prefer them over reinventing:",
+    ...lines,
+  ].join("\n");
 }
 
 export function buildNodePrompt(input: NodePromptInput): string {
