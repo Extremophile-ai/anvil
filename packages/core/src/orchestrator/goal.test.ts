@@ -82,6 +82,52 @@ describe("CommandGoalEvaluator", () => {
     expect(assessment.satisfied).toBe(false);
     expect(assessment.reason).toMatch(/echo fail.*boom/);
   });
+
+  it("splits `&&`-chained verify commands and runs each segment in the sandbox", async () => {
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+    const runner = (
+      command: string,
+      args: readonly string[],
+    ): Promise<CommandResult> => {
+      calls.push({ command, args: [...args] });
+      return Promise.resolve({ code: 0, stdout: "", stderr: "" });
+    };
+    const sandbox = new LocalSandbox({ workspace: new Workspace("/tmp/anvil-eval"), runner });
+    const evaluator = new CommandGoalEvaluator(sandbox);
+    const assessment = await evaluator.evaluate(
+      { condition: "build/lint/test green", verify: ["pnpm build && pnpm lint && pnpm test"] },
+      { task: "t", iteration: 1 },
+    );
+    expect(assessment.satisfied).toBe(true);
+    // Each `&&` segment runs as its own sandbox.exec call — never receives `&&` as an arg.
+    expect(calls.length).toBe(3);
+    expect(calls.map((c) => `${c.command} ${c.args.join(" ")}`.trim())).toEqual([
+      "pnpm build",
+      "pnpm lint",
+      "pnpm test",
+    ]);
+    expect(calls.every((c) => !c.args.includes("&&"))).toBe(true);
+  });
+
+  it("short-circuits on a failing `&&` segment and reports the original command", async () => {
+    const runner = (
+      _command: string,
+      args: readonly string[],
+    ): Promise<CommandResult> =>
+      args[0] === "lint"
+        ? Promise.resolve({ code: 2, stdout: "", stderr: "lint error" })
+        : Promise.resolve({ code: 0, stdout: "", stderr: "" });
+    const sandbox = new LocalSandbox({ workspace: new Workspace("/tmp/anvil-eval"), runner });
+    const evaluator = new CommandGoalEvaluator(sandbox);
+    const assessment = await evaluator.evaluate(
+      { condition: "x", verify: ["pnpm build && pnpm lint && pnpm test"] },
+      { task: "t", iteration: 1 },
+    );
+    expect(assessment.satisfied).toBe(false);
+    expect(assessment.reason).toMatch(/pnpm build && pnpm lint && pnpm test/);
+    expect(assessment.reason).toMatch(/lint error/);
+    expect(assessment.details).toMatchObject({ segment: "pnpm lint", exitCode: 2 });
+  });
 });
 
 describe("CompositeGoalEvaluator", () => {
